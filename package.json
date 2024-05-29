@@ -11,11 +11,15 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
+    "busboy": "^1.6.0",
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
+    "mime-types": "^2.1.35",
     "mongoose": "^8.4.0",
+    "multer": "^1.4.5-lts.1",
+    "uniqid": "^5.4.0",
     "validator": "^13.12.0"
   }
 }
