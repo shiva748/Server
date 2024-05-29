@@ -7,6 +7,7 @@ const uniqid = require("uniqid");
 const path = require("path");
 const Gigs = require("../Database/collections/Gigs");
 const { json } = require("body-parser");
+const fs = require("fs");
 const extractDuplicateKey = (errorMessage) => {
   const regex = /index:\s(\w+)_\d+\sdup key/;
   const match = errorMessage.match(regex);
@@ -261,6 +262,109 @@ exports.createGigs = async (req, res) => {
   } catch (error) {
     res
       .status(error.status || 500)
-      .send(error.message || "Internal server error");
+      .json({ message: error.message || "Internal server error" });
+  }
+};
+
+exports.fetchGigs = async (req, res) => {
+  try {
+    let filter = {};
+    let projection = {
+      gigId: 1,
+      by: 1,
+      title: 1,
+      cost: 1,
+      media: 1,
+      deliveryTime: 1,
+      rating: 1,
+    };
+
+    if (req.query.title) {
+      const title = req.query.title.trim();
+      if (title.length <= 100) {
+        filter.title = { $regex: title, $options: "i" };
+      } else {
+        const error = new Error(
+          "Title length should be maximum 100 characters"
+        );
+        error.status = 400;
+        throw error;
+      }
+    }
+
+    if (req.query.tags) {
+      const tags = req.query.tags.split(",").map((tag) => tag.trim());
+      for (const tag of tags) {
+        if (tag.length > 50) {
+          return res.status(400).json({
+            success: false,
+            error: "Tag length should be maximum 50 characters",
+          });
+        }
+      }
+      filter.tags = { $in: tags };
+    }
+
+    if (req.query.by) {
+      let by = req.query.by.trim();
+      if (by.length <= 20) {
+        filter.by = { $regex: by, $options: "i" };
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: "UserName length should be maximum 50 characters",
+        });
+      }
+    }
+
+    if (req.query.gigId) {
+      let gigId = req.query.gigId.trim();
+      if (gigId.length <= 35) {
+        filter.gigId = gigId;
+        projection = null; // Reset projection for aggregate
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: "Please ensure the gig ID provided is valid",
+        });
+      }
+    }
+
+    let gigs;
+
+    if (Object.keys(filter).length === 0) {
+      if (projection) {
+        gigs = await Gigs.aggregate([
+          { $sample: { size: 5 } },
+          { $project: projection },
+        ]);
+      } else {
+        gigs = await Gigs.aggregate([{ $sample: { size: 5 } }]);
+      }
+    } else {
+      gigs = await Gigs.find(filter, projection);
+    }
+
+    res.status(200).json({ success: true, data: gigs });
+  } catch (err) {
+    res
+      .status(err.status || 500)
+      .json({ message: err.message || "Server Error" });
+  }
+};
+
+exports.getmedia = async (req, res) => {
+  try {
+    const { gid, image } = req.params;
+    const filePath = path.join(__dirname, `../assets/gigs/${gid}/${image}`);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: "File not found" });
+    } else {
+      return res.status(200).sendFile(filePath);
+    }
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Internal Server Error" });
   }
 };
