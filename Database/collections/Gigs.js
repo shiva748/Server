@@ -35,10 +35,18 @@ const gigSchema = new Schema({
     type: String,
     required: true,
   },
+  category: {
+    type: String,
+    required: true,
+  },
   tags: {
     type: [String],
     default: [],
     required: true,
+  },
+  recommended: {
+    type: Boolean,
+    default: false,
   },
   media: {
     type: [mediaSchema],

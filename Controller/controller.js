@@ -168,9 +168,8 @@ exports.createGigs = async (req, res) => {
   try {
     const user = req.user;
     const formData = await busboyPromise(req);
-    const { title, cost, description, tags, deliveryTime } = JSON.parse(
-      formData.fields.data
-    );
+    const { title, cost, description, tags, deliveryTime, category } =
+      JSON.parse(formData.fields.data);
     if (!validator.isLength(title, { min: 10, max: 100 })) {
       const error = new Error(
         "Title must be between 10 and 100 characters long."
@@ -182,6 +181,13 @@ exports.createGigs = async (req, res) => {
     if (!validator.isLength(description, { min: 500, max: 1500 })) {
       const error = new Error(
         "Description must be between 500 and 1500 characters long."
+      );
+      error.status = 400;
+      throw error;
+    }
+    if (!validator.isLength(category, { min: 1, max: 50 })) {
+      const error = new Error(
+        "Category must be between 1 and 50 characters long."
       );
       error.status = 400;
       throw error;
@@ -249,6 +255,7 @@ exports.createGigs = async (req, res) => {
       cost,
       description,
       tags,
+      category,
       deliveryTime,
       media: arr,
     });
@@ -276,6 +283,7 @@ exports.fetchGigs = async (req, res) => {
       cost: 1,
       media: 1,
       deliveryTime: 1,
+      category: 1,
       rating: 1,
     };
 
@@ -305,9 +313,32 @@ exports.fetchGigs = async (req, res) => {
       filter.tags = { $in: tags };
     }
 
+    if (req.query.category) {
+      let category = req.query.category.trim();
+      if (category.length <= 50) {
+        filter.category = category;
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: "category length should be maximum 50 characters",
+        });
+      }
+    }
+    if (req.query.recommended) {
+      let recommended = req.query.recommended.trim().toLowerCase();
+      if (recommended === "true" || recommended === "false") {
+        filter.recommended = recommended === "true";
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: "Recommended should be either true or false",
+        });
+      }
+    }
+
     if (req.query.by) {
       let by = req.query.by.trim();
-      if (by.length <= 20) {
+      if (by.length <= 50) {
         filter.by = { $regex: by, $options: "i" };
       } else {
         return res.status(400).json({
@@ -321,7 +352,7 @@ exports.fetchGigs = async (req, res) => {
       let gigId = req.query.gigId.trim();
       if (gigId.length <= 35) {
         filter.gigId = gigId;
-        projection = null; // Reset projection for aggregate
+        projection = null;
       } else {
         return res.status(400).json({
           success: false,
