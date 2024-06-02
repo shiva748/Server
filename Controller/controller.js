@@ -6,8 +6,14 @@ const { saveFilesToFolder, cleanupFiles } = require("../busboy/savefile");
 const uniqid = require("uniqid");
 const path = require("path");
 const Gigs = require("../Database/collections/Gigs");
-const { json } = require("body-parser");
+const Order = require("../Database/collections/Orders");
+const Notification = require("../Database/collections/Notification");
 const fs = require("fs");
+const {
+  escrow,
+  initializeWallet,
+  refund,
+} = require("../Database/transaction/transaction");
 const extractDuplicateKey = (errorMessage) => {
   const regex = /index:\s(\w+)_\d+\sdup key/;
   const match = errorMessage.match(regex);
@@ -39,6 +45,12 @@ exports.register = async (req, res) => {
       const error = new Error(
         "Username should be between 3 and 20 characters long"
       );
+      error.status = 400;
+      throw error;
+    }
+
+    if (/\s/.test(UserName)) {
+      const error = new Error("Username should not contain spaces");
       error.status = 400;
       throw error;
     }
@@ -168,8 +180,15 @@ exports.createGigs = async (req, res) => {
   try {
     const user = req.user;
     const formData = await busboyPromise(req);
-    const { title, cost, description, tags, deliveryTime, category } =
-      JSON.parse(formData.fields.data);
+    const {
+      title,
+      cost,
+      description,
+      tags,
+      deliveryTime,
+      category,
+      maxPendingOrders,
+    } = JSON.parse(formData.fields.data);
     if (!validator.isLength(title, { min: 10, max: 100 })) {
       const error = new Error(
         "Title must be between 10 and 100 characters long."
@@ -221,6 +240,11 @@ exports.createGigs = async (req, res) => {
       const error = new Error("The minimum delivery time for a gig is 1 hour.");
       error.status = 400;
       throw error;
+    }
+    if (maxPendingOrders < 1) {
+      const error = new Error(
+        "the minimum maxPendingOrders for a gig is 1 order"
+      );
     }
     if (formData.files.length > 5) {
       const error = new Error("only five images are allowed");
@@ -397,5 +421,201 @@ exports.getmedia = async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+exports.createOrder = async (req, res) => {
+  try {
+    const user = req.user;
+    const { gigId } = req.body;
+
+    if (typeof gigId !== "string" || gigId.length > 35) {
+      const error = new Error(
+        "Invalid gig ID provided. Ensure it is a valid string with a maximum length of 35 characters."
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    const gig = await Gigs.findOne({ gigId });
+    if (!gig) {
+      const error = new Error(
+        "Gig not found. Please ensure the gig ID provided is valid."
+      );
+      error.status = 400;
+      throw error;
+    }
+    if (gig.by == user.UserName) {
+      const error = new Error("cant make order on your own gig");
+      error.status = 400;
+      throw error;
+    }
+    if (gig.maxPendingOrders == gig.ordersInQueue) {
+      const error = new Error(
+        "Gig alreay has maximum number of pending order."
+      );
+      error.status = 400;
+      throw error;
+    }
+    let orderId = uniqid("order-");
+    const order = new Order({
+      orderId: orderId,
+      gigId: gig.gigId,
+      buyer: user.UserName,
+      seller: gig.by,
+      cost: gig.cost,
+      deliveryTime: gig.deliveryTime,
+      chatId: uniqid("chat-"),
+    });
+
+    const result = await order.save();
+    try {
+      await escrow(user.UserName, orderId, gig.cost);
+    } catch (error) {
+      await Order.deleteOne({ orderId });
+      throw error;
+    }
+    const updateGig = await Gigs.updateOne(
+      { gigId: gig.gigId },
+      { ordersInQueue: gig.ordersInQueue + 1 }
+    );
+    const notification = new Notification({
+      notificationId: uniqid("notifi-"),
+      for: gig.by,
+      message: `You've received a new order of ${order.cost} from ${order.buyer}.`,
+    });
+    const result_n = await notification.save();
+    res.status(201).json({
+      message: "Order created successfully",
+    });
+  } catch (error) {
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Internal Server Error" });
+  }
+};
+
+exports.fetchOrders = async (req, res) => {
+  try {
+    const user = req.user;
+    const filter = { buyer: user.UserName };
+
+    if (req.query.status) {
+      const status = req.query.status.trim().toLowerCase();
+      if (
+        !["cancelled", "pending", "completed", "accepted"].some(
+          (itm) => itm == status
+        )
+      ) {
+        const error = new Error("Please select a valid Status");
+        error.status = 400;
+        throw error;
+      } else {
+        filter.status = status;
+      }
+    }
+
+    if (req.query.orderId) {
+      const orderId = req.query.orderId.trim();
+      if (
+        !validator.isLength(orderId, { min: 10, max: 35 }) ||
+        !orderId.startsWith("order-")
+      ) {
+        const error = new Error("Please enter a valid orderId");
+        error.status = 400;
+        throw error;
+      } else {
+        filter.orderId = orderId;
+      }
+    }
+
+    const order = await Order.find(filter);
+    res.status(200).json({ success: true, data: order });
+  } catch (error) {
+    res
+      .status(res.status || 500)
+      .json({ message: error.message || "Internl Server Error" });
+  }
+};
+
+exports.getNotification = async (req, res) => {
+  try {
+    const user = req.user;
+    let notification = await Order.find(
+      {
+        by: user.UserName,
+        notifiedOpen: false,
+      },
+      {
+        orderId: 1,
+        buyer: 1,
+        cost: 1,
+        orderedAt: 1,
+        deliveryTime: 1,
+      }
+    );
+    res.status(200).json({ success: true, data: notification });
+  } catch (error) {
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Internal Server Error" });
+  }
+};
+
+exports.createWallet = async (req, res) => {
+  try {
+    const { UserName } = req.user;
+    const wallet = await initializeWallet(UserName);
+    res.status(201).json({ message: "wallet created" });
+  } catch (error) {
+    console.error("Error initializing wallet:", error.message);
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Internal Server Error" });
+  }
+};
+
+exports.cancelOrder = async (req, res) => {
+  try {
+    const user = req.user;
+    const { orderId } = req.body;
+    if (!orderId.startsWith("order-")) {
+      const error = new Error(
+        "Invalid order ID format. Please provide a valid order ID."
+      );
+      error.status = 400;
+      throw error;
+    }
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      const error = new Error("Order not found.");
+      error.status = 400;
+      throw error;
+    }
+    if (order.buyer !== user.UserName && order.seller !== user.UserName) {
+      const error = new Error(
+        "You do not have permission to cancel this order."
+      );
+      error.status = 403;
+      throw error;
+    }
+    if (
+      order.revised ||
+      (order.status !== "completed" && order.status !== "pending")
+    ) {
+      const error = new Error("This order cannot be cancelled at this stage.");
+      error.status = 400;
+      throw error;
+    }
+
+    await refund(order.orderId);
+    res.status(200).json({
+      message:
+        "Order has been cancelled and the amount has been refunded to your wallet",
+    });
+  } catch (error) {
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Internal Server Error" });
   }
 };

@@ -8,6 +8,11 @@ const {
   createGigs,
   fetchGigs,
   getmedia,
+  createOrder,
+  fetchOrders,
+  getNotification,
+  createWallet,
+  cancelOrder,
 } = require("../Controller/controller");
 const verifyToken = require("../Middleware/auth");
 const path = require("path");
@@ -25,6 +30,16 @@ Router.post("/Create/gigs", verifyToken, createGigs);
 
 Router.get("/gigs", fetchGigs);
 
-Router.get("/gigs/media/:gid/:image", getmedia)
+Router.get("/gigs/media/:gid/:image", getmedia);
+
+Router.post("/gigs/order", verifyToken, createOrder);
+
+Router.get("/gigs/order", verifyToken, fetchOrders);
+
+Router.get("/gigs/notification", verifyToken, getNotification);
+
+Router.post("/Create/wallet", verifyToken, createWallet);
+
+Router.post("/gigs/order/cancel", verifyToken, cancelOrder);
 
 module.exports = Router;
