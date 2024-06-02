@@ -13,6 +13,7 @@ const {
   escrow,
   initializeWallet,
   refund,
+  transfer,
 } = require("../Database/transaction/transaction");
 const Wallet = require("../Database/collections/Wallet");
 const extractDuplicateKey = (errorMessage) => {
@@ -610,6 +611,11 @@ exports.cancelOrder = async (req, res) => {
     }
 
     await refund(order.orderId);
+    const gig = await Gigs.findOne({ gigId: order.gigId });
+    const result = await Gigs.updateOne(
+      { gigId: order.gigId },
+      { ordersInQueue: gig.ordersInQueue - 1 }
+    );
     res.status(200).json({
       message:
         "Order has been cancelled and the amount has been refunded to your wallet",
@@ -631,6 +637,45 @@ exports.getWallet = async (req, res) => {
       throw error;
     }
     res.status(200).json({ success: true, data: wallet });
+  } catch (error) {
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Internal Server Error" });
+  }
+};
+
+exports.transferFunds = async (req, res) => {
+  try {
+    const user = req.user;
+    const { receiverUserName, amount } = req.body;
+
+    if (amount <= 0) {
+      const error = new Error("The amount cannot be zero or less.");
+      error.status = 400;
+      throw error;
+    }
+
+    if (!validator.isLength(receiverUserName, { min: 3, max: 20 })) {
+      const error = new Error(
+        "Username should be between 3 and 20 characters long"
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    if (/\s/.test(receiverUserName)) {
+      const error = new Error("receiver Username should not contain spaces");
+      error.status = 400;
+      throw error;
+    }
+
+    if (user.UserName === receiverUserName) {
+      const error = new Error("You cannot transfer funds to your own wallet.");
+    }
+    await transfer(user.UserName, receiverUserName, amount);
+    res.status(200).json({
+      message: "Funds transferred successfully.",
+    });
   } catch (error) {
     res
       .status(error.status || 500)
