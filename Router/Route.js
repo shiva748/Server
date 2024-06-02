@@ -13,6 +13,7 @@ const {
   getNotification,
   createWallet,
   cancelOrder,
+  getWallet,
 } = require("../Controller/controller");
 const verifyToken = require("../Middleware/auth");
 const path = require("path");
@@ -41,5 +42,7 @@ Router.get("/gigs/notification", verifyToken, getNotification);
 Router.post("/Create/wallet", verifyToken, createWallet);
 
 Router.post("/gigs/order/cancel", verifyToken, cancelOrder);
+
+Router.get("/user/wallet", verifyToken, getWallet);
 
 module.exports = Router;

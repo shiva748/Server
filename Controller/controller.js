@@ -14,6 +14,7 @@ const {
   initializeWallet,
   refund,
 } = require("../Database/transaction/transaction");
+const Wallet = require("../Database/collections/Wallet");
 const extractDuplicateKey = (errorMessage) => {
   const regex = /index:\s(\w+)_\d+\sdup key/;
   const match = errorMessage.match(regex);
@@ -613,6 +614,23 @@ exports.cancelOrder = async (req, res) => {
       message:
         "Order has been cancelled and the amount has been refunded to your wallet",
     });
+  } catch (error) {
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Internal Server Error" });
+  }
+};
+
+exports.getWallet = async (req, res) => {
+  try {
+    const user = req.user;
+    const wallet = await Wallet.findOne({ owner: user.UserName });
+    if (!wallet) {
+      const error = new Error("You haven't created a wallet till now");
+      error.status = 400;
+      throw error;
+    }
+    res.status(200).json({ success: true, data: wallet });
   } catch (error) {
     res
       .status(error.status || 500)
