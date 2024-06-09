@@ -68,6 +68,10 @@ const gigSchema = new Schema({
     type: Number,
     default: 0,
   },
+  totalRatings: {
+    type: Number,
+    default: 0,
+  },
   rating: {
     type: Number,
     min: 0,

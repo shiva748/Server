@@ -54,6 +54,13 @@ const orderSchema = new Schema({
     type: Number,
     default: 0,
   },
+  orderResult: {
+    type: String,
+  },
+  reviewed: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const Orders = mongoose.model("Orders", orderSchema);

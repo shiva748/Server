@@ -15,6 +15,9 @@ const {
   cancelOrder,
   getWallet,
   transferFunds,
+  completeOrder,
+  acceptOrder,
+  postReview,
 } = require("../Controller/controller");
 const verifyToken = require("../Middleware/auth");
 const path = require("path");
@@ -47,5 +50,11 @@ Router.post("/gigs/order/cancel", verifyToken, cancelOrder);
 Router.get("/user/wallet", verifyToken, getWallet);
 
 Router.post("/wallet/transfer", verifyToken, transferFunds);
+
+Router.post("/gigs/order/complete", verifyToken, completeOrder);
+
+Router.post("/gigs/order/accept", verifyToken, acceptOrder);
+
+Router.post("/gigs/order/review", verifyToken, postReview);
 
 module.exports = Router;

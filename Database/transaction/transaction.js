@@ -119,16 +119,16 @@ exports.release = async (orderId) => {
       error.status = 400;
       throw error;
     }
-    if (order.status !== "accepted") {
-      const error = new Error("Order is not accepted");
+    if (order.status !== "completed") {
+      const error = new Error("Order is not completed");
       error.status = 400;
       throw error;
     }
 
-    seller.balance += order.escrow;
-
+    seller.balance += order.escrow - 5;
+    // deposite 5 to administrative and dev account when specified
     seller.transactions.push({
-      amount: order.escrow,
+      amount: order.escrow - 5,
       type: "release",
       from: "escrow",
       to: order.seller,

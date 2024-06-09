@@ -14,8 +14,10 @@ const {
   initializeWallet,
   refund,
   transfer,
+  release,
 } = require("../Database/transaction/transaction");
 const Wallet = require("../Database/collections/Wallet");
+const Review = require("../Database/collections/Review");
 const extractDuplicateKey = (errorMessage) => {
   const regex = /index:\s(\w+)_\d+\sdup key/;
   const match = errorMessage.match(regex);
@@ -472,7 +474,7 @@ exports.createOrder = async (req, res) => {
 
     const result = await order.save();
     try {
-      await escrow(user.UserName, orderId, gig.cost);
+      await escrow(user.UserName, orderId, gig.cost + 5);
     } catch (error) {
       await Order.deleteOne({ orderId });
       throw error;
@@ -594,17 +596,14 @@ exports.cancelOrder = async (req, res) => {
       error.status = 400;
       throw error;
     }
-    if (order.buyer !== user.UserName && order.seller !== user.UserName) {
+    if (order.seller !== user.UserName) {
       const error = new Error(
         "You do not have permission to cancel this order."
       );
       error.status = 403;
       throw error;
     }
-    if (
-      order.revised ||
-      (order.status !== "completed" && order.status !== "pending")
-    ) {
+    if (order.status !== "completed" && order.status !== "pending") {
       const error = new Error("This order cannot be cancelled at this stage.");
       error.status = 400;
       throw error;
@@ -676,6 +675,184 @@ exports.transferFunds = async (req, res) => {
     res.status(200).json({
       message: "Funds transferred successfully.",
     });
+  } catch (error) {
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Internal Server Error" });
+  }
+};
+
+exports.completeOrder = async (req, res) => {
+  try {
+    const user = req.user;
+    const { orderId, orderResult } = req.body;
+    if (
+      !orderId.startsWith("order-") ||
+      !validator.isLength(orderId, { min: 10, max: 50 })
+    ) {
+      const error = new Error("Please provide a valid order ID.");
+      error.status = 400;
+      throw error;
+    }
+    if (!validator.isURL(orderResult)) {
+      const error = new Error("Please provide a valid URL.");
+      error.status = 400;
+      throw error;
+    }
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      const error = new Error("Order not found.");
+      error.status = 400;
+      throw error;
+    }
+    if (order.seller !== user.UserName) {
+      const error = new Error(
+        "You do not have permission to complete this order."
+      );
+      error.status = 403;
+      throw error;
+    }
+    if (order.status !== "completed" && order.status !== "pending") {
+      const error = new Error("This order cannot be completed at this stage.");
+      error.status = 400;
+      throw error;
+    }
+
+    const result = await Order.updateOne(
+      {
+        orderId: orderId,
+        seller: user.UserName,
+        status: { $in: ["pending", "completed"] },
+      },
+      { orderResult, status: "completed" }
+    );
+
+    if (result.modifiedCount === 0) {
+      const error = new Error(
+        "Order not found or it has been accepted or cancelled."
+      );
+      error.status = 404;
+      throw error;
+    }
+
+    res.status(200).json({ message: "Order completed successfully." });
+  } catch (error) {
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Internal Server Error." });
+  }
+};
+
+exports.acceptOrder = async (req, res) => {
+  try {
+    const user = req.user;
+    const { orderId } = req.body;
+    if (
+      !orderId.startsWith("order-") ||
+      !validator.isLength(orderId, { min: 10, max: 50 })
+    ) {
+      const error = new Error("Please provide a valid order ID.");
+      error.status = 400;
+      throw error;
+    }
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      const error = new Error("Order not found.");
+      error.status = 400;
+      throw error;
+    }
+    if (order.buyer !== user.UserName) {
+      const error = new Error(
+        "You do not have permission to Accept this order."
+      );
+      error.status = 403;
+      throw error;
+    }
+    if (order.status !== "completed") {
+      const error = new Error("This order cannot be Accepted at this stage.");
+      error.status = 400;
+      throw error;
+    }
+    await release(orderId);
+    const gig = await Gigs.findOne({ gigId: order.gigId });
+    const result = await Gigs.updateOne(
+      { gigId: order.gigId },
+      {
+        ordersInQueue: gig.ordersInQueue - 1,
+        ordersCompleted: gig.ordersCompleted + 1,
+      }
+    );
+    res.status(200).json({
+      message: "Order has been accepted and the amount has been sent to seller",
+    });
+  } catch (error) {
+    res
+      .status(error.status || 500)
+      .json({ message: error.message || "Internal Server Error." });
+  }
+};
+
+exports.postReview = async (req, res) => {
+  try {
+    const user = req.user;
+    const { orderId, rating, comment } = req.body;
+    if (
+      !orderId.startsWith("order-") ||
+      !validator.isLength(orderId, { min: 10, max: 50 })
+    ) {
+      const error = new Error("Please provide a valid order ID.");
+      error.status = 400;
+      throw error;
+    }
+    if (rating < 1 || rating > 5) {
+      const error = new Error("rating could be between 1 to 5");
+      error.status = 400;
+      throw error;
+    }
+    if (!validator.isLength(comment, { min: 40, max: 1000 })) {
+      const error = new Error("comment could be between 40 to 1000 character");
+      error.status = 400;
+      throw error;
+    }
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      const error = new Error("Order not found.");
+      error.status = 400;
+      throw error;
+    }
+    if (user.UserName != order.buyer) {
+      const error = new Error("Invalid request");
+      error.status = 400;
+      throw error;
+    }
+    const gig = await Gigs.findOne({ gigId: order.gigId });
+    let review;
+    if (order.reviewed) {
+      review = await Review.findOne({ orderId });
+      gig.rating = gig.rating * gig.totalRatings - review.rating;
+      gig.totalRatings -= 1;
+      review.rating = rating;
+      review.comment = comment;
+      await review.save();
+    } else {
+      review = new Review({
+        orderId: order.orderId,
+        gigId: order.gigId,
+        buyer: order.buyer,
+        rating,
+        comment: comment,
+      });
+      let res = await review.save();
+    }
+    if (!order.reviewed) {
+      order.reviewed = true;
+      await order.save();
+    }
+    gig.rating =
+      (gig.rating * gig.totalRatings + review.rating) / (gig.totalRatings + 1);
+    gig.totalRatings += 1;
+    await gig.save();
+    res.status(200).json({ message: "Review posted successfully." });
   } catch (error) {
     res
       .status(error.status || 500)
