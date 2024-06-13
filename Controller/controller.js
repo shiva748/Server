@@ -313,6 +313,7 @@ exports.fetchGigs = async (req, res) => {
       deliveryTime: 1,
       category: 1,
       rating: 1,
+      totalRatings: 1,
     };
 
     if (req.query.title) {
