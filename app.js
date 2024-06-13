@@ -3,10 +3,17 @@ const express = require("express");
 const bodyparser = require("body-parser");
 const Route = require("./Router/Route");
 const cookieparser = require("cookie-parser");
+const cors = require("cors");
 // === === === initialize === === === //
 
 const app = express();
-const port = 4000 || process.env.port;
+const port = 3000 || process.env.port;
+
+app.use(
+  cors({
+    origin: "*",
+  })
+);
 
 app.use(bodyparser.json());
 
