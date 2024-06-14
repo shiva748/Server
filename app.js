@@ -9,17 +9,11 @@ const cors = require("cors");
 const app = express();
 const port = 3000 || process.env.port;
 
-app.use(
-  cors({
-    origin: "*",
-  })
-);
-
 app.use(bodyparser.json());
 
 app.use(cookieparser());
 
-app.use("/", Route);
+app.use("/api", Route);
 
 require("./Database/connection");
 

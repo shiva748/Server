@@ -35,7 +35,6 @@ const userSchema = new Schema({
     required: true,
     unique: true,
     trim: true,
-    match: /^\S+@\S+\.\S+$/,
   },
   Social: {
     type: Array,
